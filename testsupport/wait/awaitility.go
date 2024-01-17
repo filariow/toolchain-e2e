@@ -487,25 +487,30 @@ func (a *Awaitility) WaitForDeploymentToGetReady(t *testing.T, name string, repl
 	err := wait.Poll(a.RetryInterval, 6*a.Timeout, func() (done bool, err error) {
 		deploymentConditions := status.GetDeploymentStatusConditions(a.Client, name, a.Namespace)
 		if err := status.ValidateComponentConditionReady(deploymentConditions...); err != nil {
+			t.Log(err)
 			return false, nil // nolint:nilerr
 		}
 		deployment = &appsv1.Deployment{}
 		require.NoError(t, a.Client.Get(context.TODO(), test.NamespacedName(a.Namespace, name), deployment))
 		if int(deployment.Status.AvailableReplicas) != replicas {
+			t.Logf("expecting %d replicas, found %d", replicas, deployment.Status.AvailableReplicas)
 			return false, nil
 		}
 		pods := &corev1.PodList{}
 		require.NoError(t, a.Client.List(context.TODO(), pods, client.InNamespace(a.Namespace), client.MatchingLabels(deployment.Spec.Selector.MatchLabels)))
 		if len(pods.Items) != replicas {
+			t.Logf("expecting %d replicas, found %d pods", replicas, len(pods.Items))
 			return false, nil
 		}
 		for _, pod := range pods.Items { // nolint
 			if util.IsBeingDeleted(&pod) || !podutils.IsPodReady(&pod) {
+				t.Logf("pod %s is being deleted or not ready", pod.Name)
 				return false, nil
 			}
 		}
 		for _, criteriaMatch := range criteria {
 			if !criteriaMatch(deployment) {
+				t.Logf("criteria not matched")
 				return false, nil
 			}
 		}
