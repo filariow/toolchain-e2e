@@ -637,7 +637,7 @@ func TestPublicViewerProxy(t *testing.T) {
 		   Given User community-user exists
 		   When  A flags their space visibility to "community"
 		   Then  community-user can view A's Space
-		   And   community-user can not create resources in A's Space
+		   And   community-user cannot create resources in A's Space
 		*/
 		t.Run("community user access to community space", func(t *testing.T) {
 			require.NotEmpty(t, sp.Status.ProvisionedNamespaces)
@@ -670,7 +670,7 @@ func TestPublicViewerProxy(t *testing.T) {
 		   Given SSO user joe exists
 		   When  A flags their space visibility to "community"
 		   Then  joe can view A's Space
-		   And   joe can not create resources in A's Space
+		   And   joe cannot create resources in A's Space
 		*/
 		t.Run("as sso user", func(t *testing.T) {
 			// Given
