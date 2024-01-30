@@ -39,6 +39,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	kubewait "k8s.io/apimachinery/pkg/util/wait"
 	waitpoll "k8s.io/apimachinery/pkg/util/wait"
@@ -594,43 +596,76 @@ func TestPublicViewerProxy(t *testing.T) {
 	awaitilities := WaitForDeployments(t)
 	hostAwait := awaitilities.Host()
 	memberAwait := awaitilities.Member1()
-	// we create a space to share , a new MUR and a SpaceBindingRequest
-	space, _, _ := NewSpaceBindingRequest(t, awaitilities, memberAwait, hostAwait, "admin")
 
-	communityUser := &proxyUser{
+	owner := &proxyUser{
 		expectedMemberCluster: memberAwait,
-		username:              "community-user",
+		username:              "owner",
 		identityID:            uuid.Must(uuid.NewV4()),
 	}
-	createAppStudioUser(t, awaitilities, communityUser)
+	createAppStudioUser(t, awaitilities, owner)
 
-	communityUserProxyClient, err := hostAwait.CreateAPIProxyClient(t, communityUser.token, hostAwait.APIProxyURL)
+	proxyClient, err := hostAwait.CreateAPIProxyClient(t, owner.token, hostAwait.APIProxyURL)
 	require.NoError(t, err)
 
-	t.Run("space is flagged as community", func(t *testing.T) {
-		// when
-		sbr, err := CreateCommunitySpaceBindingRequest(t, awaitilities, memberAwait, hostAwait, space)
-		require.NoError(t, err)
-		t.Logf("created space binding request for public-viewer:\n%+v", sbr)
+	// fetch the user space
+	sp := toolchainv1alpha1.Space{}
+	require.NoError(t,
+		waitpoll.Poll(hostAwait.RetryInterval, hostAwait.Timeout, func() (bool, error) {
+			spkey := types.NamespacedName{Namespace: owner.signup.Namespace, Name: owner.compliantUsername}
+			if err := hostAwait.Client.Get(context.TODO(), spkey, &sp); err != nil {
+				return false, err
+			}
+			return true, nil
+		}))
 
-		// Wait until space is flagged as community
-		sp := toolchainv1alpha1.Space{}
+	cfg := toolchainv1alpha1.SpaceUserConfig{}
+	require.NoError(t,
+		waitpoll.Poll(hostAwait.RetryInterval, hostAwait.Timeout, func() (bool, error) {
+			spkey := types.NamespacedName{Namespace: sp.Namespace, Name: sp.Name}
+			if err := hostAwait.Client.Get(context.TODO(), spkey, &cfg); err != nil {
+				return false, err
+			}
+			return true, nil
+		}))
+
+	// fetch user workspaces
+	ww := toolchainv1alpha1.WorkspaceList{}
+	s := labels.NewSelector()
+	r, err := labels.NewRequirement(toolchainv1alpha1.OwnerLabelKey, selection.Equals, []string{owner.compliantUsername})
+	require.Error(t, err)
+	s = s.Add(*r)
+
+	require.NoError(t,
+		proxyClient.List(
+			context.TODO(),
+			&ww,
+			&client.ListOptions{
+				LabelSelector: s,
+			},
+		),
+	)
+	require.NotEmpty(t, ww)
+
+	t.Run("space is flagged as community", func(t *testing.T) {
+		// when owner updates workspace visibility to community
+		w := ww.Items[0].DeepCopy()
+		w.Spec.Visibility = toolchainv1alpha1.SpaceVisibilityCommunity
+		err := proxyClient.Update(context.TODO(), w)
+		require.NoError(t, err)
+
+		// then a space binding is created
+		sb := toolchainv1alpha1.SpaceBinding{}
 		require.NoError(t,
-			waitpoll.Poll(hostAwait.RetryInterval, hostAwait.Timeout, func() (bool, error) {
-				spkey := types.NamespacedName{Namespace: space.Namespace, Name: space.Name}
-				if err := hostAwait.Client.Get(context.TODO(), spkey, &sp); err != nil {
+			waitpoll.Poll(hostAwait.RetryInterval, hostAwait.Timeout, func() (done bool, err error) {
+				k := types.NamespacedName{Namespace: owner.signup.Namespace, Name: fmt.Sprintf("public-viewer:%s", cfg.Name)}
+				if err := hostAwait.Client.Get(context.TODO(), k, &sb); err != nil {
 					return false, err
 				}
-				l, ok := sp.GetLabels()[toolchainv1alpha1.WorkspaceVisibilityLabel]
-				r := ok && l == toolchainv1alpha1.WorkspaceVisibilityCommunity
-				if !r {
-					t.Logf("space %s in namespace %s is not flagged as community:\n%+v", space.Name, space.Namespace, sp)
-					return r, nil
-				}
-
-				t.Logf("space %s in namespace %s is flagged as community:\n%+v", space.Name, space.Namespace, sp)
-				return r, nil
+				return true, nil
 			}))
+		require.Equal(t, sb.Spec.MasterUserRecord, "public-viewer")
+		require.Equal(t, sb.Spec.Space, sp.Name)
+		require.Equal(t, sb.Spec.SpaceRole, "viewer")
 
 		/*
 		   Given Space exists for user A
@@ -646,7 +681,7 @@ func TestPublicViewerProxy(t *testing.T) {
 				// then
 				cms := corev1.ConfigMapList{}
 
-				communityUserProxyClient, err := hostAwait.CreateAPIProxyClient(t, communityUser.token, hostAwait.ProxyURLWithWorkspaceContext(sp.Name))
+				communityUserProxyClient, err := hostAwait.CreateAPIProxyClient(t, owner.token, hostAwait.ProxyURLWithWorkspaceContext(sp.Name))
 				require.NoError(t, err)
 
 				err = communityUserProxyClient.List(context.TODO(), &cms, client.InNamespace(sp.Status.ProvisionedNamespaces[0].Name))
@@ -660,7 +695,7 @@ func TestPublicViewerProxy(t *testing.T) {
 						Namespace: sp.Status.ProvisionedNamespaces[0].Name,
 					},
 				}
-				err := communityUserProxyClient.Create(context.TODO(), &cm)
+				err := proxyClient.Create(context.TODO(), &cm)
 				require.Error(t, err)
 			})
 		})

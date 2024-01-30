@@ -10,7 +10,6 @@ import (
 	toolchainv1alpha1 "github.com/codeready-toolchain/api/api/v1alpha1"
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	spacebindingrequesttestcommon "github.com/codeready-toolchain/toolchain-common/pkg/test/spacebindingrequest"
 
@@ -22,38 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/types"
 )
-
-/*
-  Given A space exist for user Jane
-  When  Jane flags the space visibility to "community"
-  Then  ServiceBinding for MUR "public-viewer" exist
-*/
-func TestServiceBindingPublicViewer(t *testing.T) {
-	// given
-
-	// make sure everything is ready before running the actual tests
-	awaitilities := WaitForDeployments(t)
-	hostAwait := awaitilities.Host()
-	memberAwait := awaitilities.Member1()
-	// we create a space to share , a new MUR and a SpaceBindingRequest
-	space, _, _ := NewSpaceBindingRequest(t, awaitilities, memberAwait, hostAwait, "admin")
-
-	t.Run("space is flagged as community", func(t *testing.T) {
-		// when
-		sbr, err := CreateCommunitySpaceBindingRequest(t, awaitilities, memberAwait, hostAwait, space)
-		require.NoError(t, err)
-
-		// then
-		_, err = hostAwait.WaitForSpaceBinding(t, sbr.Spec.MasterUserRecord, space.Name,
-			UntilSpaceBindingHasMurName(sbr.Spec.MasterUserRecord),
-			UntilSpaceBindingHasSpaceName(space.Name),
-			UntilSpaceBindingHasSpaceRole(sbr.Spec.SpaceRole),
-			UntilSpaceBindingHasLabel(toolchainv1alpha1.SpaceBindingRequestLabelKey, sbr.GetName()),
-			UntilSpaceBindingHasLabel(toolchainv1alpha1.SpaceBindingRequestNamespaceLabelKey, sbr.GetNamespace()),
-		)
-		require.NoError(t, err)
-	})
-}
 
 func TestCreateSpaceBindingRequest(t *testing.T) {
 	// given
@@ -323,27 +290,4 @@ func NewSpaceBindingRequest(t *testing.T, awaitilities Awaitilities, memberAwait
 	}
 	testsupportspace.VerifyResourcesProvisionedForSpace(t, awaitilities, space.Name)
 	return space, spaceBindingRequest, spaceBinding
-}
-
-func CreateCommunitySpaceBindingRequest(t *testing.T, awaitilities Awaitilities, memberAwait *MemberAwaitility, hostAwait *HostAwaitility, space *toolchainv1alpha1.Space) (*toolchainv1alpha1.SpaceBindingRequest, error) {
-	memberAwait, err := awaitilities.Member(memberAwait.ClusterName)
-	if err != nil {
-		return nil, err
-	}
-
-	spaceBindingRequest := &toolchainv1alpha1.SpaceBindingRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "public-viewer",
-			Namespace: space.Status.ProvisionedNamespaces[0].Name,
-		},
-		Spec: toolchainv1alpha1.SpaceBindingRequestSpec{
-			MasterUserRecord: "public-viewer",
-			SpaceRole:        "viewer",
-		},
-	}
-	if err = memberAwait.CreateWithCleanup(t, spaceBindingRequest); err != nil {
-		return nil, err
-	}
-
-	return spaceBindingRequest, nil
 }
