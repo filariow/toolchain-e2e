@@ -632,7 +632,7 @@ func TestPublicViewerProxy(t *testing.T) {
 	ww := toolchainv1alpha1.WorkspaceList{}
 	s := labels.NewSelector()
 	r, err := labels.NewRequirement(toolchainv1alpha1.OwnerLabelKey, selection.Equals, []string{owner.compliantUsername})
-	require.Error(t, err)
+	require.NoError(t, err)
 	s = s.Add(*r)
 
 	require.NoError(t,
