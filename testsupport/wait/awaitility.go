@@ -336,6 +336,7 @@ func (a *Awaitility) WaitForRouteToBeAvailable(t *testing.T, ns, name, endpoint 
 		}()
 
 		if resp.StatusCode != http.StatusOK {
+			t.Logf("received response pinging route %s: %s", name, resp.Status)
 			return false, nil
 		}
 		return true, nil

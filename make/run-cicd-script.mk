@@ -1,5 +1,5 @@
 
-OWNER_AND_BRANCH_LOCATION=codeready-toolchain/toolchain-cicd/master
+OWNER_AND_BRANCH_LOCATION=codeready-toolchain/toolchain-cicd/b46c524c09ea39dd0c0f1bfcb25dca54bdc9d3da
 GH_SCRIPTS_URL=https://raw.githubusercontent.com/${OWNER_AND_BRANCH_LOCATION}
 USE_LOCAL_SCRIPTS=false
 
