@@ -36,14 +36,16 @@ func NewSpaceBindingRequest(
 	require.NoError(t, err)
 	// let's create a new MUR that will have access to the space
 	username := uuid.Must(uuid.NewV4()).String()
-	_, secondUserMUR := NewSignupRequest(awaitilities).
+	esr := NewSignupRequest(awaitilities).
 		Username(username).
 		Email(username + "@acme.com").
 		ManuallyApprove().
 		TargetCluster(memberAwait).
 		RequireConditions(wait.ConditionSet(wait.Default(), wait.ApprovedByAdmin())...).
 		NoSpace().
-		WaitForMUR().Execute(t).Resources()
+		WaitForMUR().Execute(t)
+
+	secondUserMUR := esr.MUR
 	// create the spacebinding request
 	spaceBindingRequest := spacebinding.CreateSpaceBindingRequest(t, awaitilities, memberAwait.ClusterName,
 		spacebinding.WithSpecSpaceRole(spaceRole),

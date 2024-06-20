@@ -9,8 +9,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	waitpoll "k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -57,27 +55,20 @@ func TestPublicViewerProxy(t *testing.T) {
 		// when
 		sb := CreateCommunitySpaceBinding(t, hostAwait, space.Name, space.Namespace)
 		require.NoError(t, err)
-		t.Logf("created space binding for public-viewer:\n%+v", sb)
+		t.Logf("created space binding for %s:\n%+v", toolchainv1alpha1.KubesawAuthenticatedUsername, sb)
 
 		// Wait until space is flagged as community
 		require.NoError(t,
 			waitpoll.Poll(hostAwait.RetryInterval, hostAwait.Timeout, func() (bool, error) {
-				mr, err := labels.NewRequirement(toolchainv1alpha1.SpaceBindingMasterUserRecordLabelKey, selection.In, []string{"public-viewer"})
-				if err != nil {
-					return false, err
-				}
-
-				sr, err := labels.NewRequirement(toolchainv1alpha1.SpaceBindingSpaceLabelKey, selection.Equals, []string{space.Name})
-				if err != nil {
-					return false, err
-				}
-
-				opts := &client.ListOptions{
-					Namespace:     space.Namespace,
-					LabelSelector: labels.NewSelector().Add(*sr, *mr),
+				opts := []client.ListOption{
+					client.MatchingLabels{
+						toolchainv1alpha1.SpaceBindingMasterUserRecordLabelKey: toolchainv1alpha1.KubesawAuthenticatedUsername,
+						toolchainv1alpha1.SpaceBindingSpaceLabelKey:            space.Name,
+					},
+					client.InNamespace(space.Namespace),
 				}
 				sbs := &toolchainv1alpha1.SpaceBindingList{}
-				if err := hostAwait.Client.List(context.TODO(), sbs, opts); err != nil {
+				if err := hostAwait.Client.List(context.TODO(), sbs, opts...); err != nil {
 					return false, err
 				}
 
@@ -173,8 +164,8 @@ func createAppStudioUser(t *testing.T, awaitilities wait.Awaitilities, user *pro
 		EnsureMUR().
 		RequireConditions(wait.ConditionSet(wait.Default(), wait.ApprovedByAdmin())...).
 		Execute(t)
-	user.signup, _ = req.Resources()
-	user.token = req.GetToken()
+	user.signup = req.UserSignup
+	user.token = req.Token
 	tiers.MoveSpaceToTier(t, awaitilities.Host(), user.signup.Status.CompliantUsername, "appstudio")
 	VerifyResourcesProvisionedForSignup(t, awaitilities, user.signup, "deactivate30", "appstudio")
 	user.compliantUsername = user.signup.Status.CompliantUsername
@@ -187,5 +178,5 @@ func CreateCommunitySpaceBinding(
 	hostAwait *wait.HostAwaitility,
 	spaceName, spaceNamespace string,
 ) *toolchainv1alpha1.SpaceBinding {
-	return spacebinding.CreateSpaceBindingStr(t, hostAwait, "public-viewer", spaceName, spaceNamespace, "contributor")
+	return spacebinding.CreateSpaceBindingStr(t, hostAwait, toolchainv1alpha1.KubesawAuthenticatedUsername, spaceName, spaceNamespace, "contributor")
 }
