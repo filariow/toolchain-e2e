@@ -118,7 +118,11 @@ func TestProxyPublicViewer(t *testing.T) {
 					Username: "joe",
 				}
 				email := "joe@joe.joe"
-				claims := []commonauth.ExtraClaim{commonauth.WithEmailClaim(email)}
+				claims := []commonauth.ExtraClaim{
+					commonauth.WithEmailClaim(email),
+					commonauth.WithAccountIDClaim("joe"),
+					commonauth.WithUserIDClaim("joe"),
+				}
 				token, err := authsupport.NewTokenFromIdentity(userIdentity, claims...)
 				require.NoError(t, err)
 				return proxyUser{token: token, email: email}
@@ -144,12 +148,12 @@ func TestProxyPublicViewer(t *testing.T) {
 					// build proxy client
 					user := c.proxyClientUser()
 					proxyWorkspaceURL := hostAwait.ProxyURLWithWorkspaceContext(sp.Name)
-					communityUserProxyClient, err := hostAwait.CreateAPIProxyClient(t, user.Token(), proxyWorkspaceURL)
+					proxyClient, err := hostAwait.CreateAPIProxyClient(t, user.Token(), proxyWorkspaceURL)
 					require.NoError(t, err)
 
 					t.Run("can list config maps", func(t *testing.T) {
 						cms := corev1.ConfigMapList{}
-						err = communityUserProxyClient.List(context.TODO(), &cms, client.InNamespace(sp.Status.ProvisionedNamespaces[0].Name))
+						err = proxyClient.List(context.TODO(), &cms, client.InNamespace(sp.Status.ProvisionedNamespaces[0].Name))
 						require.NoError(t, err)
 					})
 
@@ -160,8 +164,8 @@ func TestProxyPublicViewer(t *testing.T) {
 								Namespace: sp.Status.ProvisionedNamespaces[0].Name,
 							},
 						}
-						err = communityUserProxyClient.Create(context.TODO(), &cm)
-						require.True(t, errors.IsForbidden(err), "expected Create ConfigMap as community user to return a Forbidden error, actual: %v", err)
+						err = proxyClient.Create(context.TODO(), &cm)
+						require.True(t, errors.IsForbidden(err), "expected Create ConfigMap to return a Forbidden error, actual: %v", err)
 					})
 				})
 			}
@@ -178,14 +182,14 @@ func TestProxyPublicViewer(t *testing.T) {
 						proxyClient, err := hostAwait.CreateAPIProxyClient(t, user.Token(), url)
 						require.NoError(t, err)
 
-						// TODO(@filariow): enable this once registration-service's middleware is implemented
-						//
-						// t.Run("cannot list config maps", func(t *testing.T) {
-						// 	cms := corev1.ConfigMapList{}
-						// 	err := proxyClient.List(context.TODO(), &cms, client.InNamespace(sp.Status.ProvisionedNamespaces[0].Name))
-						// 	require.Zero(t, cms)
-						// 	require.Error(t, err)
-						// })
+						t.Run("cannot list config maps", func(t *testing.T) {
+							cms := corev1.ConfigMapList{}
+
+							err := proxyClient.List(context.TODO(), &cms, client.InNamespace(sp.Status.ProvisionedNamespaces[0].Name))
+							require.Zero(t, cms)
+							require.True(t, meta.IsNoMatchError(err), "expected List ConfigMap to return a IsNoMatch error, actual: %v", err)
+						})
+
 						t.Run("cannot create config maps", func(t *testing.T) {
 							cm := corev1.ConfigMap{
 								ObjectMeta: metav1.ObjectMeta{
@@ -194,7 +198,7 @@ func TestProxyPublicViewer(t *testing.T) {
 								},
 							}
 							err := proxyClient.Create(context.TODO(), &cm)
-							require.True(t, errors.IsForbidden(err), "expected Create ConfigMap as SSO user to return a Forbidden error, actual: %v", err)
+							require.True(t, meta.IsNoMatchError(err), "expected Create ConfigMap to return a IsNoMatch error, actual: %v", err)
 						})
 					})
 				})
@@ -231,7 +235,7 @@ func TestProxyPublicViewer(t *testing.T) {
 								cms := corev1.ConfigMapList{}
 
 								err = communityUserProxyClient.List(context.TODO(), &cms, client.InNamespace(sp.Status.ProvisionedNamespaces[0].Name))
-								require.True(t, meta.IsNoMatchError(err), "expected List ConfigMap as community user to return a NoMatch error, actual: %v", err)
+								require.True(t, meta.IsNoMatchError(err), "expected List ConfigMap to return a NoMatch error, actual: %v", err)
 							})
 
 							t.Run("community user cannot create config maps into space", func(t *testing.T) {
@@ -242,7 +246,7 @@ func TestProxyPublicViewer(t *testing.T) {
 									},
 								}
 								err := communityUserProxyClient.Create(context.TODO(), &cm)
-								require.True(t, meta.IsNoMatchError(err), "expected Create ConfigMap as community user to return a NoMatch error, actual: %v", err)
+								require.True(t, meta.IsNoMatchError(err), "expected Create ConfigMap to return a NoMatch error, actual: %v", err)
 							})
 						})
 					})
